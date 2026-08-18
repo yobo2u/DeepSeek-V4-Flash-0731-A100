@@ -148,8 +148,20 @@ exec "${VENV}/bin/python" -m sglang.launch_server \
 
 ## 模型下载
 
-- HF: [yobo2u/DeepSeek-V4-Flash-0731-BF16-MXFP4](https://huggingface.co/yobo2u/DeepSeek-V4-Flash-0731-BF16-MXFP4)
-- ModelScope: [yobo2u/DeepSeek-V4-Flash-0731-BF16-MXFP4](https://modelscope.cn/models/yobo2u/DeepSeek-V4-Flash-0731-BF16-MXFP4)
+转换后的模型（BF16 + MXFP4，162GB）托管在：
+
+- **HuggingFace**: [yobo2u/DeepSeek-V4-Flash-0731-BF16-MXFP4](https://huggingface.co/yobo2u/DeepSeek-V4-Flash-0731-BF16-MXFP4)
+- **ModelScope**: [yobo2u/DeepSeek-V4-Flash-0731-BF16-MXFP4](https://modelscope.cn/models/yobo2u/DeepSeek-V4-Flash-0731-BF16-MXFP4)
+
+```bash
+# HuggingFace
+hf download yobo2u/DeepSeek-V4-Flash-0731-BF16-MXFP4 \
+  --local-dir /path/to/models/DeepSeek-V4-Flash-0731-BF16-MXFP4
+
+# ModelScope
+modelscope download yobo2u/DeepSeek-V4-Flash-0731-BF16-MXFP4 \
+  --local_dir /path/to/models/DeepSeek-V4-Flash-0731-BF16-MXFP4
+```
 
 ## 致谢
 
