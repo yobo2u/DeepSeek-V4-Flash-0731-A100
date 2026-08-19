@@ -95,7 +95,10 @@ B 的峰值 1528.32 出现在 1K/C16，该组两次重复波动高达 **19.73%**
 - 原始 JSON：[配置 A](dspark-085-16k.json) · [配置 B](dspark-090-32k.json) · [配置 C](dspark-085-32k.json)
 - 单配置 HTML：[A](dspark-085-16k.html) · [B](dspark-090-32k.html) · [C](dspark-085-32k.html)
 - 脚本：[单配置 benchmark](../benchmark.py) · [30 组完整矩阵](../benchmark_dspark_full.py) · [三配置报告生成](../make_dspark_3way.py)
-- 启动脚本：[配置 A](../launch.sh) · [配置 B](../launch_mem090_chunk32k.sh) · [配置 C](../launch_mem085_chunk32k.sh)
+- 启动脚本：[配置 B](../launch_mem090_chunk32k.sh) · [配置 C（推荐，即默认 `launch.sh`）](../launch_mem085_chunk32k.sh)
+
+> `launch.sh` 已固化为推荐的配置 C（mem 0.85 + chunk 32768），与 `launch_mem085_chunk32k.sh` 等价。
+> 配置 A 仅将 C 的 `--chunked-prefill-size` 改回 `16384` 即可复现。
 
 ## 指标口径
 

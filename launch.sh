@@ -43,7 +43,7 @@ exec "${VENV}/bin/python" -m sglang.launch_server \
   --reasoning-parser deepseek-v4 \
   --tool-call-parser deepseekv4 \
   --speculative-algorithm DSPARK \
-  --chunked-prefill-size 16384 \
+  --chunked-prefill-size 32768 \
   --max-running-requests 16 \
   --watchdog-timeout 1800 \
   --context-length 1048576
