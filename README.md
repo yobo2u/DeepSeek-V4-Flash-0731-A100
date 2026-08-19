@@ -1,64 +1,74 @@
-# DeepSeek V4 Flash on A800 (SM80) Deployment
+# DeepSeek V4 Flash on A800 / A100 (SM80) Deployment
+
+**[English](#english) · [中文](#中文)**
+
+Complete deployment recipe for running DeepSeek-V4-Flash-0731 on 8× NVIDIA A800-SXM4-80GB (SM80).
 
 在 8× NVIDIA A800-SXM4-80GB (SM80) 上部署 DeepSeek-V4-Flash-0731 的完整方案。
 
-## 硬件环境
+> **SM90+ users (H100 / H800 / H20) do not need this repository** — use the official upstream weights and stock SGLang directly.
+>
+> **SM90+ 用户（H100 / H800 / H20）无需本仓库** —— 直接使用官方权重和原版 SGLang 即可。
+
+---
+
+<a name="english"></a>
+
+## English
+
+### Hardware
 
 - 8× A800-SXM4-80GB (SM80, Compute Capability 8.0)
-- NVLink 8×25 GB/s 双向
+- NVLink 8×25 GB/s bidirectional
 - CUDA 13.0+ / Driver 595.71+
 
-## 软件栈
+### Software Stack
 
-| 组件 | 版本 |
+| Component | Version |
 |------|------|
-| SGLang | 0.5.16 (commit fdebc938) |
+| SGLang | 0.5.16 (commit `fdebc938`) |
 | PyTorch | 2.11.0+cu130 |
 | Triton | 3.6.0 |
 | Python | 3.12.13 |
 | CUDA | 13.0 |
 
-## 模型准备
+### Model Preparation
 
-### 模型下载
+The SM80 architecture does not support native FP8. Non-expert weights must be converted to BF16
+while MoE expert weights stay in MXFP4.
 
-**HuggingFace:**
+**Option 1 — download the pre-converted weights (recommended)**
+
+```bash
+# HuggingFace
+hf download yobo2u/DeepSeek-V4-Flash-0731-A100 \
+  --local-dir /path/to/models/DeepSeek-V4-Flash-0731-A100
+
+# ModelScope
+modelscope download yobo2u/DeepSeek-V4-Flash-0731-A100 \
+  --local_dir /path/to/models/DeepSeek-V4-Flash-0731-A100
+```
+
+- **HuggingFace**: [yobo2u/DeepSeek-V4-Flash-0731-A100](https://huggingface.co/yobo2u/DeepSeek-V4-Flash-0731-A100)
+- **ModelScope**: [yobo2u/DeepSeek-V4-Flash-0731-A100](https://modelscope.cn/models/yobo2u/DeepSeek-V4-Flash-0731-A100)
+
+Converted size is about 173 GB across 48 shards: 47,927 tensors total, of which 35,328 expert
+tensors remain in MXFP4. After downloading, verify that every shard referenced by
+`model.safetensors.index.json` is present.
+
+**Option 2 — convert from the original checkpoint yourself**
+
 ```bash
 hf download deepseek-ai/DeepSeek-V4-Flash-0731 \
   --local-dir /path/to/models/DeepSeek-V4-Flash-0731
 ```
 
-**ModelScope:**
-```bash
-modelscope download deepseek-ai/DeepSeek-V4-Flash-0731 \
-  --local_dir /path/to/models/DeepSeek-V4-Flash-0731
-```
+Convert the non-expert weights from FP8 to BF16 and keep the MoE expert weights in MXFP4,
+then confirm the output has 48 shards and that the tensor count matches the source checkpoint.
 
-### 离线转换 (FP8 → BF16 + MXFP4)
+### Quick Start
 
-A800/A100 (SM80) 不支持原生 FP8，需要将非 expert 权重转为 BF16：
-
-```bash
-# 先验证原始模型
-python scripts/validate_dsv4_checkpoint.py original \
-  /path/to/models/DeepSeek-V4-Flash-0731
-
-# 转换
-python scripts/convert_deepseek_v4_flash_moe_mxfp4_bf16.py \
-  --input /path/to/models/DeepSeek-V4-Flash-0731 \
-  --output /path/to/models/DeepSeek-V4-Flash-0731-BF16-MXFP4
-
-# 验证转换后模型
-python scripts/validate_dsv4_checkpoint.py converted \
-  /path/to/models/DeepSeek-V4-Flash-0731-BF16-MXFP4 \
-  --reference /path/to/models/DeepSeek-V4-Flash-0731
-```
-
-转换后模型约 162GB（原始 156GB）。47,927 tensors, 35,328 expert tensors 保留 MXFP4。
-
-## 快速开始
-
-### 1. 安装 SGLang 0.5.16
+**1. Install SGLang 0.5.16**
 
 ```bash
 uv venv /path/to/venv-sglang0516 --python 3.12
@@ -66,7 +76,7 @@ uv pip install --python /path/to/venv-sglang0516/bin/python \
   "sglang[all] @ git+https://github.com/sgl-project/sglang.git@fdebc938f7f4d16fe6b9f55dcd9a767cf0899ea1#subdirectory=python"
 ```
 
-### 2. 安装 A100 monkeypatch
+**2. Install the A100 monkeypatch**
 
 ```bash
 git clone https://github.com/yaleyoou/deepseek-v4-a100-sglang-v0516.git
@@ -74,17 +84,20 @@ cd deepseek-v4-a100-sglang-v0516
 uv pip install --python /path/to/venv-sglang0516/bin/python -e . --no-deps
 ```
 
-### 3. 启动服务
+**3. Launch the server**
 
 ```bash
-bash launch_dsv4_a100.sh
+bash launch.sh
 ```
 
-或手动设置环境变量：
+`launch.sh` ships with the recommended config C. To reproduce config A or B, use
+`launch_mem085_chunk32k.sh` (identical to `launch.sh`) or `launch_mem090_chunk32k.sh`.
+
+Or set the environment manually:
 
 ```bash
 export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
-export MODEL_PATH=/path/to/DeepSeek-V4-Flash-0731-BF16-MXFP4
+export MODEL_PATH=/path/to/DeepSeek-V4-Flash-0731-A100
 export VENV=/path/to/venv-sglang0516
 export PROJECT_ROOT=/path/to/deepseek-v4-a100-sglang-v0516
 export PYTHONPATH="${PROJECT_ROOT}:${VENV}/lib/python3.12/site-packages"
@@ -117,7 +130,196 @@ exec "${VENV}/bin/python" -m sglang.launch_server \
   --context-length 1048576
 ```
 
-## 性能基准 (8×A800, DSpark)
+### Benchmarks (8×A800, DSpark)
+
+Measured on the recommended **config C** (`mem-fraction-static 0.85` + `chunked-prefill-size 32768`):
+5 context lengths × 3 concurrency levels × 2 repeats = 30 groups, 900 requests, 0 errors and 0 timeouts.
+
+| Metric | Value |
+|------|-----|
+| Single-stream decode (C1, 1000/TPOT) | ~217 tok/s |
+| Single-stream aggregate throughput (C1) | ~205 tok/s (166–222) |
+| Aggregate throughput (C16) | ~1232 tok/s (peak 1334) |
+| Accept Rate | ~60% (0.40–0.86, rises with context) |
+| Accept Len | ~4.01 (3.01–5.30) |
+| TTFT (C1) | ~296 ms |
+| Peak VRAM / GPU | ~51.9 GB |
+| Context | 1M tokens |
+
+> Accept Rate and Accept Len rise substantially with context length: about 0.40 / 3.0 at 1K,
+> and about 0.82 / 5.1 at 128K. The table reports means over all 30 groups — see the raw JSON
+> under [benchmarks](benchmarks/) for per-group values.
+
+#### Parameter Ablation
+
+Three configurations, 30 groups / 900 requests each:
+
+| Config | mem-fraction | chunked-prefill | Mean throughput | Peak throughput | Mean AR | Peak VRAM/GPU | Best-in-group |
+|------|---|---|---|---|---|---|---|
+| A | 0.85 | 16384 | 746.2 tok/s | 1260.0 | 0.603 | 48.58 GiB | 2 / 15 |
+| B | 0.90 | 32768 | 759.8 tok/s | 1528.3 | 0.594 | 53.80 GiB | 6 / 15 |
+| **C (recommended)** | **0.85** | **32768** | **766.4 tok/s** | 1334.1 | 0.602 | 51.92 GiB | **7 / 15** |
+
+**Factor decomposition** (C vs A isolates the chunk effect; C vs B isolates the mem effect):
+
+- **The 128K long-context regression comes from `mem-fraction-static=0.90`, not from the 32K chunk.**
+  With chunk fixed at 32768, dropping mem from 0.90 to 0.85 recovers **+11.55%** on average across
+  the three 128K concurrency levels; with mem fixed at 0.85, raising chunk from 16K to 32K changes
+  128K by only **+1.69%**.
+- `mem-fraction 0.90` squeezes the available KV cache headroom, dropping the 128K Accept Rate from 0.80 to 0.69.
+- Config C simultaneously achieves the highest mean throughput and the fewest high-variance groups
+  (3 vs 6 for both A and B), while using less VRAM than B.
+
+Full report: [three-way factor comparison](benchmarks/comparison-3way.html) · [PDF](benchmarks/comparison-3way.pdf)
+
+### Key Parameters
+
+| Parameter | Value | Notes |
+|------|-----|------|
+| `context-length` | 1048576 | 1M context |
+| `tp-size` | 8 | 8-way tensor parallel |
+| `chunked-prefill-size` | 32768 | Measured better than 16384 |
+| `max-running-requests` | 16 | Max concurrent requests |
+| `mem-fraction-static` | 0.85 | 85% of VRAM for KV cache (0.90 regresses at 128K) |
+| `speculative-algorithm` | DSPARK | Speculative decoding |
+
+### Repository Contents
+
+| File | Purpose |
+|---|---|
+| `launch.sh` | Recommended launch script (config C) |
+| `launch_mem085_chunk32k.sh` | Config C, identical to `launch.sh` |
+| `launch_mem090_chunk32k.sh` | Config B, for reproducing the ablation |
+| `benchmark.py` | Single-configuration benchmark |
+| `benchmark_dspark_full.py` | Full 30-group DSpark matrix |
+| `make_dspark_3way.py` | Three-way comparison report generator |
+| `benchmarks/` | Reports and raw results |
+
+### Credits
+
+- [yaleyoou/deepseek-v4-a100-sglang-v0516](https://github.com/yaleyoou/deepseek-v4-a100-sglang-v0516) — A100 monkeypatch
+- [Qeeweew/deepseek-v4-a100-sglang](https://github.com/Qeeweew/deepseek-v4-a100-sglang) — original patch
+- [nudt-eddie](https://huggingface.co/nudt-eddie) — deployment validation
+
+---
+
+<a name="中文"></a>
+
+## 中文
+
+### 硬件环境
+
+- 8× A800-SXM4-80GB (SM80, Compute Capability 8.0)
+- NVLink 8×25 GB/s 双向
+- CUDA 13.0+ / Driver 595.71+
+
+### 软件栈
+
+| 组件 | 版本 |
+|------|------|
+| SGLang | 0.5.16 (commit `fdebc938`) |
+| PyTorch | 2.11.0+cu130 |
+| Triton | 3.6.0 |
+| Python | 3.12.13 |
+| CUDA | 13.0 |
+
+### 模型准备
+
+SM80 架构不支持原生 FP8，需要把非 expert 权重转为 BF16，MoE expert 权重保留 MXFP4。
+
+**方式一：直接下载已转换权重（推荐）**
+
+```bash
+# HuggingFace
+hf download yobo2u/DeepSeek-V4-Flash-0731-A100 \
+  --local-dir /path/to/models/DeepSeek-V4-Flash-0731-A100
+
+# ModelScope
+modelscope download yobo2u/DeepSeek-V4-Flash-0731-A100 \
+  --local_dir /path/to/models/DeepSeek-V4-Flash-0731-A100
+```
+
+- **HuggingFace**: [yobo2u/DeepSeek-V4-Flash-0731-A100](https://huggingface.co/yobo2u/DeepSeek-V4-Flash-0731-A100)
+- **ModelScope**: [yobo2u/DeepSeek-V4-Flash-0731-A100](https://modelscope.cn/models/yobo2u/DeepSeek-V4-Flash-0731-A100)
+
+转换后约 173 GB，48 个分片，共 47,927 个 tensor，其中 35,328 个 expert tensor 保留 MXFP4。
+下载完成后请验证 `model.safetensors.index.json` 引用的全部分片均存在。
+
+**方式二：自行从原始 checkpoint 转换**
+
+```bash
+hf download deepseek-ai/DeepSeek-V4-Flash-0731 \
+  --local-dir /path/to/models/DeepSeek-V4-Flash-0731
+```
+
+将非 expert 权重由 FP8 转为 BF16，MoE expert 权重保留 MXFP4，
+转换后确认输出为 48 个分片，且 tensor 总数与源 checkpoint 一致。
+
+### 快速开始
+
+**1. 安装 SGLang 0.5.16**
+
+```bash
+uv venv /path/to/venv-sglang0516 --python 3.12
+uv pip install --python /path/to/venv-sglang0516/bin/python \
+  "sglang[all] @ git+https://github.com/sgl-project/sglang.git@fdebc938f7f4d16fe6b9f55dcd9a767cf0899ea1#subdirectory=python"
+```
+
+**2. 安装 A100 monkeypatch**
+
+```bash
+git clone https://github.com/yaleyoou/deepseek-v4-a100-sglang-v0516.git
+cd deepseek-v4-a100-sglang-v0516
+uv pip install --python /path/to/venv-sglang0516/bin/python -e . --no-deps
+```
+
+**3. 启动服务**
+
+```bash
+bash launch.sh
+```
+
+`launch.sh` 已固化为推荐的配置 C。若要复现配置 A 或 B，
+可使用 `launch_mem085_chunk32k.sh`（与 `launch.sh` 等价）或 `launch_mem090_chunk32k.sh`。
+
+或手动设置环境变量：
+
+```bash
+export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
+export MODEL_PATH=/path/to/DeepSeek-V4-Flash-0731-A100
+export VENV=/path/to/venv-sglang0516
+export PROJECT_ROOT=/path/to/deepseek-v4-a100-sglang-v0516
+export PYTHONPATH="${PROJECT_ROOT}:${VENV}/lib/python3.12/site-packages"
+
+# Monkeypatch env
+export ENABLE_SGLANG_DSV4_A100_PATCH=1
+export SGLANG_DSV4_A100_DIRECT_ATTENTION=1
+export SGLANG_DSV4_A100_INT8_INDEXER=1
+export SGLANG_DSV4_FP4_EXPERTS=1
+export SGLANG_DSV4_MXFP4_MOE_BACKEND=mxfp4_int8
+export SGLANG_OPT_DEEPGEMM_HC_PRENORM=0
+export SGLANG_OPT_USE_TOPK_V2=0
+
+exec "${VENV}/bin/python" -m sglang.launch_server \
+  --model-path "${MODEL_PATH}" \
+  --trust-remote-code \
+  --dtype bfloat16 \
+  --quantization fp8 \
+  --moe-runner-backend marlin \
+  --tp-size 8 \
+  --mem-fraction-static 0.85 \
+  --host 0.0.0.0 \
+  --port 8082 \
+  --served-model-name deepseek-v4-flash-0731 \
+  --reasoning-parser deepseek-v4 \
+  --tool-call-parser deepseekv4 \
+  --speculative-algorithm DSPARK \
+  --chunked-prefill-size 32768 \
+  --max-running-requests 16 \
+  --context-length 1048576
+```
+
+### 性能基准 (8×A800, DSpark)
 
 推荐配置 **C**（`mem-fraction-static 0.85` + `chunked-prefill-size 32768`）实测，
 5 档上下文 × 3 并发 × 2 重复 = 30 组，900 请求，Error / Timeout 均为 0：
@@ -136,7 +338,7 @@ exec "${VENV}/bin/python" -m sglang.launch_server \
 > Accept Rate / Accept Len 随上下文长度显著上升：1K 档约 0.40 / 3.0，128K 档约 0.82 / 5.1。
 > 上表为 30 组全局均值，单点数值请查阅 [benchmarks](benchmarks/) 下的原始 JSON。
 
-### 参数消融对比
+#### 参数消融对比
 
 三配置完整对比（各 30 组 / 900 请求）：
 
@@ -156,36 +358,39 @@ exec "${VENV}/bin/python" -m sglang.launch_server \
 
 完整报告：[三配置因子分解对比](benchmarks/comparison-3way.html) · [PDF](benchmarks/comparison-3way.pdf)
 
-## 关键参数
+### 关键参数
 
 | 参数 | 值 | 说明 |
 |------|-----|------|
-| context-length | 1048576 | 1M 上下文 |
-| tp-size | 8 | 8 路张量并行 |
-| chunked-prefill-size | 32768 | 分块 prefill（实测优于 16384） |
-| max-running-requests | 16 | 最大并发请求 |
-| mem-fraction-static | 0.85 | 85% 显存给 KV cache（0.90 会在 128K 掉速） |
-| speculative-algorithm | DSPARK | 投机解码 |
+| `context-length` | 1048576 | 1M 上下文 |
+| `tp-size` | 8 | 8 路张量并行 |
+| `chunked-prefill-size` | 32768 | 分块 prefill（实测优于 16384） |
+| `max-running-requests` | 16 | 最大并发请求 |
+| `mem-fraction-static` | 0.85 | 85% 显存给 KV cache（0.90 会在 128K 掉速） |
+| `speculative-algorithm` | DSPARK | 投机解码 |
 
-## 模型下载
+### 仓库文件说明
 
-转换后的模型（BF16 + MXFP4，162GB）托管在：
+| 文件 | 用途 |
+|---|---|
+| `launch.sh` | 推荐启动脚本（配置 C） |
+| `launch_mem085_chunk32k.sh` | 配置 C，与 `launch.sh` 等价 |
+| `launch_mem090_chunk32k.sh` | 配置 B，用于复现消融对比 |
+| `benchmark.py` | 单配置 benchmark |
+| `benchmark_dspark_full.py` | 30 组完整 DSpark 矩阵 |
+| `make_dspark_3way.py` | 三配置对比报告生成 |
+| `benchmarks/` | 测试报告与原始结果 |
 
-- **HuggingFace**: [yobo2u/DeepSeek-V4-Flash-0731-BF16-MXFP4](https://huggingface.co/yobo2u/DeepSeek-V4-Flash-0731-BF16-MXFP4)
-- **ModelScope**: [yobo2u/DeepSeek-V4-Flash-0731-BF16-MXFP4](https://modelscope.cn/models/yobo2u/DeepSeek-V4-Flash-0731-BF16-MXFP4)
+### 致谢
 
-```bash
-# HuggingFace
-hf download yobo2u/DeepSeek-V4-Flash-0731-BF16-MXFP4 \
-  --local-dir /path/to/models/DeepSeek-V4-Flash-0731-BF16-MXFP4
+- [yaleyoou/deepseek-v4-a100-sglang-v0516](https://github.com/yaleyoou/deepseek-v4-a100-sglang-v0516) — A100 monkeypatch
+- [Qeeweew/deepseek-v4-a100-sglang](https://github.com/Qeeweew/deepseek-v4-a100-sglang) — 原始 patch
+- [nudt-eddie](https://huggingface.co/nudt-eddie) — 部署验证
 
-# ModelScope
-modelscope download yobo2u/DeepSeek-V4-Flash-0731-BF16-MXFP4 \
-  --local_dir /path/to/models/DeepSeek-V4-Flash-0731-BF16-MXFP4
-```
+---
 
-## 致谢
+## License
 
-- [yaleyoou/deepseek-v4-a100-sglang-v0516](https://github.com/yaleyoou/deepseek-v4-a100-sglang-v0516) - A100 monkeypatch
-- [Qeeweew/deepseek-v4-a100-sglang](https://github.com/Qeeweew/deepseek-v4-a100-sglang) - 原始 patch
-- [nudt-eddie](https://huggingface.co/nudt-eddie) - 部署验证
+MIT, following the upstream DeepSeek-V4-Flash-0731 repository.
+
+沿用上游 DeepSeek-V4-Flash-0731 仓库的 MIT License。
